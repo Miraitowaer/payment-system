@@ -1,0 +1,36 @@
+server:
+  port: 8080
+
+# 自定义配置：微信公众号信息
+wx:
+  config:
+    original-id: gh_39f669d9afb0   # 测试号页面上的“微信号”，随便填个假的也行，这个参数目前用不到
+    app-id: wxd4bc621a3f36d830 # 🔴 把你刚才申请的 appID 填在这里
+    app-secret: e38635a2f207d26f04732e5b69596322 # 🔴 把你刚才申请的 appsecret 填在这里
+    token: pinkpig_token      # 接口配置信息里的Token，随便填，暂时用不到
+
+spring:
+  redis:
+    host: localhost # 你的 Redis 地址
+    port: 6379
+    password:       # 如果没有密码就留空
+    database: 0
+    timeout: 3000ms
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/payment_db?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
+    username: root
+    password: 123456
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml  # 告诉 MyBatis 去哪找 XML
+  type-aliases-package: com.pinkpig.payment.domain.trade.model.entity # 别名扫描
+
+
+alipay:
+  gateway-url: https://openapi-sandbox.dl.alipaydev.com/gateway.do  # 沙箱网关(注意是dev)
+  app-id: 9021000157684165
+  merchant-private-key: MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCJLQx2FkvGS32+vPA1vf3hXM7LO+8EiwrNchmRFOtf/KIxSCpG3nmWE9ryMkhrjIw7L3ScerfhU5KkYJdL+GvM5L29L4qC1zs+mPfb4oAtYCW+RksgPha5MQHFd7sp6gWaIU2yjUcSmcliZaXewjbPbxMaN8ESKWD6YaVTXgpU8j+NPKOi1B9Dd6xNFo6GycPtCD+mOhZDMnYOs9imI4N6l4iiH4CSD0rOSPI0kdRCYRe5Pl7knS+vj+qE5EW7cdsE1yk2GGuRHPtwlwqaJrIjFyXHBG46O4Nt3/GgsUJi3cMWhK9wBX42zW2//+TFVgDGR1NNWgtJxfzaPXngAPAXAgMBAAECggEAEttXeDAucG7WNU8hsjGQ4dbxMmzluXknngBOVWxLwuEmpqGl9iIFEsVd9qdE30vtxwEKBay09EuZv/DrO21F3F+hWY1cfAn8QemjQN3NAu/RoGtnTmJam1CKTsvbtbJO3NYxKRdUqtDrJxSUDaAjCrbZKGR7rPR1OVYM9P3ba7vBzUw+Lm6qfwVwBQcPbzVsGFOXOj5E+n4WczslLCBnX/Xvf55vuVqDSl66BTmmRqTvKfZu1EcR8qdwQIYDfbI9/DtCHAKTX0LZWZapbCv05zj6vrmMQudjL9sMopr1hsRVrNs8XoUi7jCdZjgzzwjmOBjweo+xHTDIpm4xqjwqwQKBgQC7exLpRzunbMCaiyAy6EsumegoUxXhYHqBW0018p3syWFG/PoxXuOT18mMfWfnknHnSCj3F3FkLqCVrb9JEZ87EoFaAgSJMDHrJwoNPG8m/RLkXWA5kGz1r1R3pXiX1vj7ME5oNN6Y+NFhq4UfxmMe3GG+Tn7FPjGkbDfbp7zAIQKBgQC7T2X00ZyXKX4t55x+R26MS6kuxdB8lgWXD5gRZwJvNkZ/Ug8il7p1YcvMA7nWZpYq0Xt0DpZvEvt3vILYPgUZx/XA5wz/Ky1eiFmOb0Rtlzq63wUMRXOQH9WoI4bdBWeROK2IrhvbdS5wwz/cvrVaxGIVrXCUpbX+mcI2Z2KJNwKBgQCD3EYqyK0OTpEQoTWeWH84YYtFgVpsT70Z6itd/CxS9Dh1A0y9GK4bt7PMGg/QcdGnB7u4PkbEXX8Yh0F4lOpXU+aidbTXAIy7hZOuR4kt9OUqtPoOwqPAEPbpx/oPYWVw1kLvS/AbyzUI6ugQtynT9NDSVscW12125Z5L4agBwQKBgBqtZkIGEJ1e5X+4OwupNM96fzAQMG9uFoG7UNc5qpkYS9YaY9lzbrUFJrd52F/24HBcwY53/Wj4dSRKjwApZSSU3CWLQsic56tNFCQ7KK3LGiw/U0K6KYlfX1jBJpYYDPYb8mtDEOiiueiJhnD0IHQ7ABVCTIR/TXpjf8ur0dblAoGATzZTcsVxAOtBSMuCTqvbijocGB0QND52YV9nmsc8DcqVGfjSMcFKuTuHc1uauHOihLLyqPMAeinIND6eapTZ9Md+5jRmGBXswgDXCCyFXMW1Gbiz+yoNFbzvZNngTb8s3w2BOOEgCxOtqiiqz7K6tJgXeR+FlNU5S/Rhf+YV87A=
+  alipay-public-key: MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoBsjI2MnhkXbDHxr4AW5GqsIZc6dHHIT0em7mCgidGcBGf5TojwlFCARmtzxGNmpJ6GE8jeLrl722B9zOqLovqlPLKsdIEXA2r9Tvoa/3/oXoXYMZ1Jk7Dx/kRqZgYO43JCm00QwjToC9k0f1yrp+a/gfdnsTw/DjBiT0qBCpKuIYcJO1g9UwyJMvHAubw6QBxpMs0ao9sUdXn2ih958/I/xCY/kEHWyub6cHnrm18+lBiO/TihNtwPOTb92WWBALWURYl5oBNNn8e6kpXVh4RjOAWL1HVLzKhpK4Dm6C2mAdPBz5N2FtJj7IVShpGBhTVufjbZTHbDg1KLD2ZtPlwIDAQAB
+  notify-url: http://localhost:8080/api/v1/order/alipay_callback  # 暂时写本地，后面讲内网穿透再改
+  return-url: http://localhost:8080/api/v1/order/alipay_return    # 支付成功后跳回的页面
