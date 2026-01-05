@@ -8,6 +8,7 @@ import com.pinkpig.payment.domain.trade.repository.ITradeRepository;
 import com.pinkpig.payment.infrastructure.cache.RedisUtil;
 import com.pinkpig.payment.infrastructure.gateway.AlipayStrategy;
 import org.apache.commons.lang3.RandomStringUtils;
+import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
 import javax.annotation.Resource;
 import java.math.BigDecimal;
@@ -29,6 +30,9 @@ public class TradeAppService {
     @Resource
     private RedisUtil redisUtil;
 
+    @Resource
+    private RedissonClient redissonClient; // 注入 Redisson
+
     /**
      * 创建交易订单 (核心流程)
      * @param userId 用户OpenID
@@ -40,10 +44,12 @@ public class TradeAppService {
         String stockKey = "goods:stock:" + productId;
 
         // 1. 原子递减
-        Long currentStock = redisUtil.decrement(stockKey);
+//        Long currentStock = redisUtil.decrement(stockKey);
+
+        boolean isSuccess = redisUtil.deductStockLua(stockKey);
 
         // 2. 判定结果
-        if (currentStock < 0) {
+        if (!isSuccess) {
             // 如果减完是 -1，说明刚才已经是 0 了，库存不足
             // 此时流量被拦截在 Redis 层，根本不会去查数据库，保护了 DB
             System.out.println("⛔️ Redis 拦截：库存不足！User: " + userId);

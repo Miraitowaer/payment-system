@@ -13,7 +13,7 @@ spring:
   redis:
     host: localhost # 你的 Redis 地址
     port: 6379
-#    password:       # 如果没有密码就留空
+    #    password:       # 如果没有密码就留空
     database: 0
     timeout: 3000ms
   datasource:
