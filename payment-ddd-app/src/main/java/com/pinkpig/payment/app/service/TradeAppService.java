@@ -1,6 +1,7 @@
 package com.pinkpig.payment.app.service;
 
 import cn.hutool.core.util.IdUtil;
+import com.pinkpig.payment.domain.trade.model.dto.TradeOrderMsgDTO;
 import com.pinkpig.payment.domain.trade.model.entity.TradeGoodsEntity;
 import com.pinkpig.payment.domain.trade.model.entity.TradeOrderEntity;
 import com.pinkpig.payment.domain.trade.repository.IGoodsRepository;
@@ -8,6 +9,7 @@ import com.pinkpig.payment.domain.trade.repository.ITradeRepository;
 import com.pinkpig.payment.infrastructure.cache.RedisUtil;
 import com.pinkpig.payment.infrastructure.gateway.AlipayStrategy;
 import org.apache.commons.lang3.RandomStringUtils;
+import org.redisson.api.RBlockingQueue;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
 import javax.annotation.Resource;
@@ -33,82 +35,129 @@ public class TradeAppService {
     @Resource
     private RedissonClient redissonClient; // 注入 Redisson
 
+
+    /**
+     * 创建交易订单 (异步削峰版)
+     */
+    public String createOrder(String userId, String productId) {
+
+        String stockKey = "goods:stock:" + productId;
+
+        // 1. 【第一道防线】Redis/Lua 原子预扣减库存
+        // 这一步必须保留！它挡住了 99% 的无效流量，只有扣减成功的请求才有资格进入队列
+        boolean isSuccess = redisUtil.deductStockLua(stockKey);
+
+        if (!isSuccess) {
+            System.out.println("⛔️ Redis 拦截：库存不足！User: " + userId);
+            throw new RuntimeException("手慢了，已被抢光！(Redis)");
+        }
+
+        // 2. 【前置检查】校验商品是否存在 (读缓存或数据库，读操作很快)
+        TradeGoodsEntity goods = goodsRepository.queryGoods(productId);
+        if (goods == null) {
+            redisUtil.increment(stockKey); // 回滚 Redis
+            throw new RuntimeException("商品不存在");
+        }
+
+        // 3. 【防掉单】(可选，如果要做得细致，可以在这里查一下有没有未支付订单，有则直接返回)
+        // ... (为了演示清晰，这里暂时省略，交给消费者去处理或者忽略)
+
+        // 4. 生成订单号
+        String orderId = generateOrderId();
+
+        // 5. 封装消息对象
+        TradeOrderMsgDTO msgDTO = new TradeOrderMsgDTO(userId, productId, orderId);
+
+        // 6. 获取队列 (这是分布式的阻塞队列)
+        RBlockingQueue<TradeOrderMsgDTO> queue = redissonClient.getBlockingQueue("trade_order_queue");
+
+        // 7. 异步发送 (offerAsync 也是非阻塞的，速度极快)
+        queue.offerAsync(msgDTO);
+
+        System.out.println("✅ [生产者] 消息已发送至队列，OrderId: " + orderId);
+
+        // 8. 直接返回给前端
+        // 因为是异步，所以不能立刻返回支付宝表单了。
+        // 这里的提示语会被 Controller 写回给浏览器
+        return "<h1>抢购申请已提交！</h1><p>系统正在排队处理中，请稍后在订单中心查看结果...</p>";
+    }
+
     /**
      * 创建交易订单 (核心流程)
      * @param userId 用户OpenID
      * @param productId 商品ID
      * @return 支付参数 (比如支付宝的 Form 表单，这里暂时返回 orderId)
      */
-    public String createOrder(String userId, String productId) {
-
-        String stockKey = "goods:stock:" + productId;
-
-        // 1. 原子递减
-//        Long currentStock = redisUtil.decrement(stockKey);
-
-        boolean isSuccess = redisUtil.deductStockLua(stockKey);
-
-        // 2. 判定结果
-        if (!isSuccess) {
-            // 如果减完是 -1，说明刚才已经是 0 了，库存不足
-            // 此时流量被拦截在 Redis 层，根本不会去查数据库，保护了 DB
-            System.out.println("⛔️ Redis 拦截：库存不足！User: " + userId);
-            throw new RuntimeException("手慢了，已被抢光！(Redis)");
-        }
-
-        // 如果代码走到这里，说明 Redis 里抢到了名额 (stock >= 0)
-        // 接下来才允许去数据库里真的下单
-
-        // 0. 【前置检查】先查一下商品存不存在，价格是多少
-        TradeGoodsEntity goods = goodsRepository.queryGoods(productId);
-//        System.out.println(goods);
-        if (goods == null){
-            redisUtil.increment(stockKey);
-            throw new RuntimeException("商品不存在");
-        }
-
-        // 1. 【防掉单检查】
-        // 查询该用户对该商品，是否有一笔没支付的烂账？
-        TradeOrderEntity existOrder = tradeRepository.queryUnPayOrder(userId, productId);
-
-        if (existOrder != null) {
-            System.out.println("检测到掉单(未支付订单)，直接复用，订单号: " + existOrder.getOrderId());
-            // 直接返回旧订单号，不去创建新的
-            // 如果是复用旧单，说明不是新抢购，要把刚才 Redis 扣掉的名额还回去！
-            redisUtil.increment(stockKey);
-            return alipayStrategy.doPay(existOrder.getOrderId(), existOrder.getAmount().toString(), existOrder.getOrderName());
-        }
-
-        // 2. 【扣减库存】
-        boolean success = goodsRepository.deductStock(productId);
-        if (!success){
-            redisUtil.increment(stockKey);
-            System.out.println("库存不足，抢购失败！用户：" + userId);
-            throw new RuntimeException("手慢了，库存不足！");
-        }
-
-        // 3. 【创建新订单】
-        // 如果没有掉单，说明是全新的购买请求
-        TradeOrderEntity newOrder = TradeOrderEntity.builder()
-                .orderId(generateOrderId()) // 生成雪花ID
-                .userId(userId)
-                .productId(productId)
-                .orderName(goods.getGoodsName()) // 实际应该查商品表
-                .amount(new BigDecimal(goods.getPrice().toString())) // 实际应该查商品表
-                .status("CREATE")
-                .createTime(new Date())
-                .build();
-
-        // 3. 落库 (如果此时用户并发点了两次，数据库唯一索引会在这里抛异常，实现兜底防重)
-//        System.out.println(newOrder);
-        tradeRepository.insert(newOrder);
-        System.out.println("创建新订单成功，订单号: " + newOrder.getOrderId());
-
-        // 4. 调用支付域能力
-        String orderIdToPay = (existOrder != null) ? existOrder.getOrderId() : newOrder.getOrderId();
-
-        return alipayStrategy.doPay(orderIdToPay, newOrder.getAmount().toString(), newOrder.getOrderName());
-    }
+//    public String createOrder(String userId, String productId) {
+//
+//        String stockKey = "goods:stock:" + productId;
+//
+//        // 1. 原子递减
+////        Long currentStock = redisUtil.decrement(stockKey);
+//
+//        boolean isSuccess = redisUtil.deductStockLua(stockKey);
+//
+//        // 2. 判定结果
+//        if (!isSuccess) {
+//            // 如果减完是 -1，说明刚才已经是 0 了，库存不足
+//            // 此时流量被拦截在 Redis 层，根本不会去查数据库，保护了 DB
+//            System.out.println("⛔️ Redis 拦截：库存不足！User: " + userId);
+//            throw new RuntimeException("手慢了，已被抢光！(Redis)");
+//        }
+//
+//        // 如果代码走到这里，说明 Redis 里抢到了名额 (stock >= 0)
+//        // 接下来才允许去数据库里真的下单
+//
+//        // 0. 【前置检查】先查一下商品存不存在，价格是多少
+//        TradeGoodsEntity goods = goodsRepository.queryGoods(productId);
+////        System.out.println(goods);
+//        if (goods == null){
+//            redisUtil.increment(stockKey);
+//            throw new RuntimeException("商品不存在");
+//        }
+//
+//        // 1. 【防掉单检查】
+//        // 查询该用户对该商品，是否有一笔没支付的烂账？
+//        TradeOrderEntity existOrder = tradeRepository.queryUnPayOrder(userId, productId);
+//
+//        if (existOrder != null) {
+//            System.out.println("检测到掉单(未支付订单)，直接复用，订单号: " + existOrder.getOrderId());
+//            // 直接返回旧订单号，不去创建新的
+//            // 如果是复用旧单，说明不是新抢购，要把刚才 Redis 扣掉的名额还回去！
+//            redisUtil.increment(stockKey);
+//            return alipayStrategy.doPay(existOrder.getOrderId(), existOrder.getAmount().toString(), existOrder.getOrderName());
+//        }
+//
+//        // 2. 【扣减库存】
+//        boolean success = goodsRepository.deductStock(productId);
+//        if (!success){
+//            redisUtil.increment(stockKey);
+//            System.out.println("库存不足，抢购失败！用户：" + userId);
+//            throw new RuntimeException("手慢了，库存不足！");
+//        }
+//
+//        // 3. 【创建新订单】
+//        // 如果没有掉单，说明是全新的购买请求
+//        TradeOrderEntity newOrder = TradeOrderEntity.builder()
+//                .orderId(generateOrderId()) // 生成雪花ID
+//                .userId(userId)
+//                .productId(productId)
+//                .orderName(goods.getGoodsName()) // 实际应该查商品表
+//                .amount(new BigDecimal(goods.getPrice().toString())) // 实际应该查商品表
+//                .status("CREATE")
+//                .createTime(new Date())
+//                .build();
+//
+//        // 3. 落库 (如果此时用户并发点了两次，数据库唯一索引会在这里抛异常，实现兜底防重)
+////        System.out.println(newOrder);
+//        tradeRepository.insert(newOrder);
+//        System.out.println("创建新订单成功，订单号: " + newOrder.getOrderId());
+//
+//        // 4. 调用支付域能力
+//        String orderIdToPay = (existOrder != null) ? existOrder.getOrderId() : newOrder.getOrderId();
+//
+//        return alipayStrategy.doPay(orderIdToPay, newOrder.getAmount().toString(), newOrder.getOrderName());
+//    }
 
     /**
      * 模拟简单的订单号生成 (实习阶段用 UUID + 时间戳，生产环境用雪花算法)

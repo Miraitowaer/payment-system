@@ -48,7 +48,10 @@ SET order_name = 'Java架构课-秒杀版'
 WHERE order_name IS NULL;
 DELETE FROM trade_order 
 WHERE order_name IS NULL 
-   OR pay_time IS NULL;]]></console>
+   OR pay_time IS NULL;
+update trade_order set status = 'PAID' where product_id = 1002
+select * from trade_order where order_id = 2008104414388293632
+delete from trade_order where product_id = 1002]]></console>
     </connection>
   </component>
   <component name="DBNavigator.Project.DatabaseEditorStateManager">

@@ -26,7 +26,7 @@ public class OrderController {
 
         // 这里的 productId 先写死 "1001" (我们数据库里只有这一个商品)
         // 以后真正做电商时，这个 ID 是前端传过来的
-        String formStr = tradeAppService.createOrder(openId, "1007");
+        String formStr = tradeAppService.createOrder(openId, "1006");
 
         // 直接把 HTML 写回给浏览器，浏览器收到后会自动渲染并跳转
         response.setContentType("text/html;charset=utf-8");
